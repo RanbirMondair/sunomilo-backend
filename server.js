@@ -74,6 +74,7 @@ app.use('/api/messages', require('./routes/messages'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/verification', require('./routes/verification'));
+app.use('/api/migrate', require('./routes/migrate'));
 
 // Health check
 app.get('/api/health', (req, res) => {
