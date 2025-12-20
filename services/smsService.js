@@ -1,5 +1,6 @@
-// SMS Service using Vonage SMS API with alphanumeric sender ID
+// SMS Service using Vonage SMS API with alphanumeric sender ID and PostgreSQL storage
 const { Vonage } = require('@vonage/server-sdk');
+const { Pool } = require('pg');
 
 // Country codes mapping
 const ALLOWED_COUNTRIES = {
@@ -19,10 +20,17 @@ class SMSService {
       apiSecret: process.env.VONAGE_API_SECRET
     });
     
-    // Store verification codes in memory (in production, use Redis or database)
-    this.verificationCodes = new Map();
-    
-    console.log('✅ Vonage SMS Service initialized with Sender ID:', SENDER_ID);
+    // Initialize PostgreSQL connection pool
+    if (process.env.DATABASE_URL) {
+      this.pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+      });
+      console.log('✅ Vonage SMS Service initialized with Sender ID:', SENDER_ID);
+      console.log('✅ PostgreSQL connection pool initialized');
+    } else {
+      console.warn('⚠️  No DATABASE_URL provided, verification will not work!');
+    }
   }
 
   /**
@@ -61,6 +69,83 @@ class SMSService {
   }
 
   /**
+   * Store verification code in database
+   */
+  async storeVerificationCode(phoneNumber, code, requestId) {
+    if (!this.pool) {
+      throw new Error('Database not initialized');
+    }
+
+    try {
+      // Delete any existing code for this phone number
+      await this.pool.query(
+        'DELETE FROM verification_codes WHERE phone_number = $1',
+        [phoneNumber]
+      );
+
+      // Insert new verification code
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+      
+      await this.pool.query(
+        `INSERT INTO verification_codes (phone_number, code, request_id, expires_at)
+         VALUES ($1, $2, $3, $4)`,
+        [phoneNumber, code, requestId, expiresAt]
+      );
+
+      console.log(`✅ Verification code stored in database for ${phoneNumber}`);
+    } catch (error) {
+      console.error('❌ Failed to store verification code:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get verification code from database
+   */
+  async getVerificationCode(phoneNumber) {
+    if (!this.pool) {
+      throw new Error('Database not initialized');
+    }
+
+    try {
+      const result = await this.pool.query(
+        `SELECT code, request_id, expires_at 
+         FROM verification_codes 
+         WHERE phone_number = $1`,
+        [phoneNumber]
+      );
+
+      if (result.rows.length === 0) {
+        return null;
+      }
+
+      return result.rows[0];
+    } catch (error) {
+      console.error('❌ Failed to get verification code:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete verification code from database
+   */
+  async deleteVerificationCode(phoneNumber) {
+    if (!this.pool) {
+      return;
+    }
+
+    try {
+      await this.pool.query(
+        'DELETE FROM verification_codes WHERE phone_number = $1',
+        [phoneNumber]
+      );
+      console.log(`✅ Verification code deleted for ${phoneNumber}`);
+    } catch (error) {
+      console.error('❌ Failed to delete verification code:', error);
+    }
+  }
+
+  /**
    * Send SMS verification code using Vonage SMS API with alphanumeric sender ID
    */
   async sendVerificationSMS(phoneNumber, countryCode) {
@@ -85,13 +170,10 @@ class SMSService {
 
       // Check if SMS was sent successfully
       if (response.messages && response.messages[0].status === '0') {
-        // Store verification code with expiry (10 minutes)
         const requestId = response.messages[0]['message-id'];
-        this.verificationCodes.set(fullPhoneNumber, {
-          code: verificationCode,
-          requestId: requestId,
-          expiresAt: Date.now() + 10 * 60 * 1000 // 10 minutes
-        });
+        
+        // Store verification code in database
+        await this.storeVerificationCode(fullPhoneNumber, verificationCode, requestId);
 
         console.log(`✅ SMS sent successfully! Message ID: ${requestId}`);
         
@@ -122,8 +204,8 @@ class SMSService {
       
       console.log(`Verifying code for phone: ${fullPhoneNumber}, request ID: ${requestId}`);
 
-      // Get stored verification code
-      const storedData = this.verificationCodes.get(fullPhoneNumber);
+      // Get stored verification code from database
+      const storedData = await this.getVerificationCode(fullPhoneNumber);
 
       if (!storedData) {
         console.error('❌ No verification code found for this phone number');
@@ -135,8 +217,8 @@ class SMSService {
       }
 
       // Check if code has expired
-      if (Date.now() > storedData.expiresAt) {
-        this.verificationCodes.delete(fullPhoneNumber);
+      if (new Date() > new Date(storedData.expires_at)) {
+        await this.deleteVerificationCode(fullPhoneNumber);
         console.error('❌ Verification code expired');
         return {
           success: false,
@@ -155,8 +237,8 @@ class SMSService {
         };
       }
 
-      // Code is valid - remove it from storage
-      this.verificationCodes.delete(fullPhoneNumber);
+      // Code is valid - remove it from database
+      await this.deleteVerificationCode(fullPhoneNumber);
       
       console.log(`✅ Verification successful for ${fullPhoneNumber}`);
       
@@ -185,6 +267,24 @@ class SMSService {
       name: data.name,
       dialCode: data.code
     }));
+  }
+
+  /**
+   * Cleanup expired verification codes (should be called periodically)
+   */
+  async cleanupExpiredCodes() {
+    if (!this.pool) {
+      return;
+    }
+
+    try {
+      const result = await this.pool.query(
+        'DELETE FROM verification_codes WHERE expires_at < NOW()'
+      );
+      console.log(`🧹 Cleaned up ${result.rowCount} expired verification codes`);
+    } catch (error) {
+      console.error('❌ Failed to cleanup expired codes:', error);
+    }
   }
 }
 

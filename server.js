@@ -8,6 +8,9 @@ const { Pool } = require('pg');
 // Load environment variables
 dotenv.config();
 
+// Import database initialization
+const { initializeDatabase } = require('./db/init');
+
 // Initialize Express app
 const app = express();
 const server = http.createServer(app);
@@ -37,12 +40,18 @@ if (process.env.DATABASE_URL) {
     console.error('Unexpected error on idle client', err);
   });
 
-  // Test database connection
-  pool.query('SELECT NOW()', (err, res) => {
+  // Test database connection and initialize tables
+  pool.query('SELECT NOW()', async (err, res) => {
     if (err) {
       console.error('Database connection error:', err);
     } else {
       console.log('✅ Database connected');
+      // Initialize database tables
+      try {
+        await initializeDatabase();
+      } catch (initError) {
+        console.error('Database initialization error:', initError);
+      }
     }
   });
 } else {
