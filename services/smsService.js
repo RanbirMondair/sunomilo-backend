@@ -161,9 +161,11 @@ class SMSService {
 
       // Send SMS via Vonage SMS API with alphanumeric sender ID
       const from = SENDER_ID;
-      const to = fullPhoneNumber;
+      // Remove + prefix for Vonage API (it expects numbers without +)
+      const to = fullPhoneNumber.replace(/^\+/, '');
       const text = `Your SunoMilo verification code is: ${verificationCode}\n\nThis code expires in 10 minutes.`;
       
+      // Use the SMS client from vonage instance
       const response = await this.vonage.sms.send({ to, from, text });
 
       console.log('Vonage SMS response:', response);
