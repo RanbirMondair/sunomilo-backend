@@ -167,15 +167,14 @@ router.post('/seed', async (req, res) => {
         // Insert user
         const result = await pool.query(
           `INSERT INTO users (
-            name, email, phone_number, password, age, gender, location, bio,
+            name, email, password, age, gender, location, bio,
             interests, looking_for, min_age, max_age, relationship_type, max_distance,
             photo_url, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
           RETURNING id, name, email`,
           [
             profile.name,
             profile.email,
-            profile.phone_number,
             hashedPassword,
             profile.age,
             profile.gender,
