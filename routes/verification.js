@@ -1,4 +1,4 @@
-// Verification Routes using Twilio Verify API
+// Verification Routes using Vonage Verify API
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
@@ -12,7 +12,7 @@ const supabase = createClient(
 
 /**
  * POST /api/verification/send-code
- * Send verification code to phone number using Twilio Verify
+ * Send verification code to phone number using Vonage Verify
  */
 router.post('/send-code', async (req, res) => {
   try {
@@ -48,14 +48,17 @@ router.post('/send-code', async (req, res) => {
       });
     }
 
-    // Send SMS via Twilio Verify (no need to store code - Twilio handles it!)
+    // Send SMS via Vonage Verify
     try {
       const result = await smsService.sendVerificationSMS(phoneNumber, countryCode);
       
+      // Store the request_id in session or return it to frontend
+      // Frontend needs to send this back when verifying the code
       res.json({
         success: true,
         message: 'Verification code sent to your phone',
         phoneNumber: formattedPhone,
+        requestId: result.requestId, // Frontend must store this!
         status: result.status
       });
     } catch (smsError) {
@@ -72,22 +75,22 @@ router.post('/send-code', async (req, res) => {
 
 /**
  * POST /api/verification/verify-code
- * Verify the code sent to phone number using Twilio Verify
+ * Verify the code sent to phone number using Vonage Verify
  */
 router.post('/verify-code', async (req, res) => {
   try {
-    const { phoneNumber, countryCode, verificationCode } = req.body;
+    const { phoneNumber, countryCode, verificationCode, requestId } = req.body;
 
     // Validate input
-    if (!phoneNumber || !verificationCode || !countryCode) {
+    if (!phoneNumber || !verificationCode || !countryCode || !requestId) {
       return res.status(400).json({
-        error: 'Phone number, country code, and verification code are required'
+        error: 'Phone number, country code, verification code, and request ID are required'
       });
     }
 
-    // Verify code via Twilio Verify
+    // Verify code via Vonage Verify
     try {
-      const result = await smsService.verifyCode(phoneNumber, countryCode, verificationCode);
+      const result = await smsService.verifyCode(phoneNumber, countryCode, verificationCode, requestId);
       
       if (result.success) {
         // Format phone number for storage
@@ -101,7 +104,7 @@ router.post('/verify-code', async (req, res) => {
         });
       } else {
         res.status(400).json({
-          error: 'Invalid verification code',
+          error: result.errorText || 'Invalid verification code',
           status: result.status
         });
       }

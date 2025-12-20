@@ -1,5 +1,5 @@
-// SMS Service using Twilio Verify API
-const twilio = require('twilio');
+// SMS Service using Vonage Verify API
+const { Vonage } = require('@vonage/server-sdk');
 
 // Country codes mapping
 const ALLOWED_COUNTRIES = {
@@ -10,12 +10,11 @@ const ALLOWED_COUNTRIES = {
 
 class SMSService {
   constructor() {
-    // Initialize Twilio client
-    this.client = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
-    this.verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
+    // Initialize Vonage client
+    this.vonage = new Vonage({
+      apiKey: process.env.VONAGE_API_KEY,
+      apiSecret: process.env.VONAGE_API_SECRET
+    });
   }
 
   /**
@@ -47,33 +46,38 @@ class SMSService {
   }
 
   /**
-   * Send SMS verification code using Twilio Verify
+   * Send SMS verification code using Vonage Verify
    */
   async sendVerificationSMS(phoneNumber, countryCode) {
     try {
       // Validate and format phone number
       const fullPhoneNumber = this.formatPhoneNumber(phoneNumber, countryCode);
 
-      console.log(`Sending verification to ${fullPhoneNumber} via Twilio Verify`);
+      console.log(`Sending verification to ${fullPhoneNumber} via Vonage Verify`);
 
-      // Send verification code via Twilio Verify
-      const verification = await this.client.verify.v2
-        .services(this.verifyServiceSid)
-        .verifications
-        .create({
-          to: fullPhoneNumber,
-          channel: 'sms'
+      // Send verification request via Vonage Verify API
+      return new Promise((resolve, reject) => {
+        this.vonage.verify.start({
+          number: fullPhoneNumber,
+          brand: 'SunoMilo',
+          code_length: 6
+        }, (err, result) => {
+          if (err) {
+            console.error('Vonage Verify error:', err);
+            reject(new Error(`Failed to send SMS: ${err.message || err.error_text}`));
+          } else {
+            console.log(`Verification sent! Request ID: ${result.request_id}, Status: ${result.status}`);
+            resolve({
+              success: true,
+              requestId: result.request_id,
+              status: result.status,
+              phoneNumber: fullPhoneNumber
+            });
+          }
         });
-
-      console.log(`Verification sent! Status: ${verification.status}, SID: ${verification.sid}`);
-
-      return {
-        success: true,
-        status: verification.status,
-        phoneNumber: fullPhoneNumber
-      };
+      });
     } catch (error) {
-      console.error('Twilio Verify sending failed:', error);
+      console.error('Vonage Verify sending failed:', error);
       throw new Error(`Failed to send SMS: ${error.message}`);
     }
   }
@@ -81,30 +85,35 @@ class SMSService {
   /**
    * Verify the code entered by user
    */
-  async verifyCode(phoneNumber, countryCode, code) {
+  async verifyCode(phoneNumber, countryCode, code, requestId) {
     try {
       // Format phone number
       const fullPhoneNumber = this.formatPhoneNumber(phoneNumber, countryCode);
 
-      console.log(`Verifying code for ${fullPhoneNumber}`);
+      console.log(`Verifying code for ${fullPhoneNumber}, Request ID: ${requestId}`);
 
-      // Verify code via Twilio Verify
-      const verificationCheck = await this.client.verify.v2
-        .services(this.verifyServiceSid)
-        .verificationChecks
-        .create({
-          to: fullPhoneNumber,
+      // Verify code via Vonage Verify API
+      return new Promise((resolve, reject) => {
+        this.vonage.verify.check({
+          request_id: requestId,
           code: code
+        }, (err, result) => {
+          if (err) {
+            console.error('Vonage Verify check error:', err);
+            reject(new Error(`Failed to verify code: ${err.message || err.error_text}`));
+          } else {
+            console.log(`Verification check status: ${result.status}`);
+            const isApproved = result.status === '0'; // Status 0 means success
+            resolve({
+              success: isApproved,
+              status: result.status,
+              errorText: result.error_text
+            });
+          }
         });
-
-      console.log(`Verification check status: ${verificationCheck.status}`);
-
-      return {
-        success: verificationCheck.status === 'approved',
-        status: verificationCheck.status
-      };
+      });
     } catch (error) {
-      console.error('Twilio Verify check failed:', error);
+      console.error('Vonage Verify check failed:', error);
       throw new Error(`Failed to verify code: ${error.message}`);
     }
   }
