@@ -26,23 +26,28 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Database connection
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
-});
+// Database connection (optional)
+let pool = null;
+if (process.env.DATABASE_URL) {
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL
+  });
 
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
-});
+  pool.on('error', (err) => {
+    console.error('Unexpected error on idle client', err);
+  });
 
-// Test database connection
-pool.query('SELECT NOW()', (err, res) => {
-  if (err) {
-    console.error('Database connection error:', err);
-  } else {
-    console.log('✅ Database connected');
-  }
-});
+  // Test database connection
+  pool.query('SELECT NOW()', (err, res) => {
+    if (err) {
+      console.error('Database connection error:', err);
+    } else {
+      console.log('✅ Database connected');
+    }
+  });
+} else {
+  console.log('⚠️  No DATABASE_URL provided, running without PostgreSQL');
+}
 
 // Store database pool in app
 app.locals.pool = pool;
