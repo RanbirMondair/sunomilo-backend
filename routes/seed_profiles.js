@@ -164,16 +164,23 @@ router.post('/seed', async (req, res) => {
         // Hash password
         const hashedPassword = await bcrypt.hash(profile.password, 10);
 
+        // Split name into first_name and last_name
+        const nameParts = profile.name.split(' ');
+        const firstName = nameParts[0];
+        const lastName = nameParts.slice(1).join(' ') || nameParts[0];
+
         // Insert user
         const result = await pool.query(
           `INSERT INTO users (
-            name, email, phone, password_hash, age, gender, location, bio,
+            name, first_name, last_name, email, phone, password_hash, age, gender, location, bio,
             interests, looking_for, min_age, max_age, relationship_type, max_distance,
             profile_image_url, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
           RETURNING id, name, email`,
           [
             profile.name,
+            firstName,
+            lastName,
             profile.email,
             profile.phone_number,
             hashedPassword,
