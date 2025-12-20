@@ -79,7 +79,7 @@ router.get('/', authMiddleware, async (req, res) => {
               u.profile_image_url, u.interests, u.relationship_type
        FROM users u
        WHERE ${whereClause}
-       ORDER BY RANDOM()
+       ORDER BY (u.profile_image_url IS NOT NULL) DESC, RANDOM()
        LIMIT $2`,
       params
     );
