@@ -1,5 +1,4 @@
-// SMS Service using Vonage SMS API with alphanumeric sender ID and PostgreSQL storage
-const { Vonage } = require('@vonage/server-sdk');
+// SMS Service using Vonage REST API directly with alphanumeric sender ID and PostgreSQL storage
 const { Pool } = require('pg');
 
 // Country codes mapping
@@ -14,11 +13,13 @@ const SENDER_ID = 'SunoMilo';
 
 class SMSService {
   constructor() {
-    // Initialize Vonage client
-    this.vonage = new Vonage({
-      apiKey: process.env.VONAGE_API_KEY,
-      apiSecret: process.env.VONAGE_API_SECRET
-    });
+    // Store Vonage credentials
+    this.apiKey = process.env.VONAGE_API_KEY;
+    this.apiSecret = process.env.VONAGE_API_SECRET;
+    
+    if (!this.apiKey || !this.apiSecret) {
+      console.error('❌ VONAGE_API_KEY or VONAGE_API_SECRET not set!');
+    }
     
     // Initialize PostgreSQL connection pool
     if (process.env.DATABASE_URL) {
@@ -61,11 +62,12 @@ class SMSService {
   }
 
   /**
-   * Format phone number with country code
+   * Format phone number with country code (E.164 format without +)
    */
   formatPhoneNumber(phoneNumber, countryCode) {
     const cleanPhone = this.validatePhoneNumber(phoneNumber, countryCode);
-    return ALLOWED_COUNTRIES[countryCode].code + cleanPhone;
+    // Return without + prefix (e.g., "436603174740")
+    return ALLOWED_COUNTRIES[countryCode].code.replace('+', '') + cleanPhone;
   }
 
   /**
@@ -146,7 +148,7 @@ class SMSService {
   }
 
   /**
-   * Send SMS verification code using Vonage SMS API with alphanumeric sender ID
+   * Send SMS using Vonage REST API directly
    */
   async sendVerificationSMS(phoneNumber, countryCode) {
     try {
@@ -156,46 +158,62 @@ class SMSService {
       // Generate verification code
       const verificationCode = this.generateVerificationCode();
 
-      console.log(`Sending verification to ${fullPhoneNumber} via Vonage SMS API`);
+      console.log(`Sending verification to ${fullPhoneNumber} via Vonage REST API`);
       console.log(`Using alphanumeric Sender ID: ${SENDER_ID}`);
 
-      // Send SMS via Vonage SMS API with alphanumeric sender ID
-      const from = SENDER_ID;
-      // Remove + prefix for Vonage API (it expects numbers without +)
-      const to = fullPhoneNumber.replace(/^\+/, '');
-      const text = `Your SunoMilo verification code is: ${verificationCode}\n\nThis code expires in 10 minutes.`;
-      
-      // Use the SMS client from vonage instance
-      const response = await this.vonage.sms.send({ to, from, text });
+      // Prepare SMS parameters
+      const params = new URLSearchParams({
+        api_key: this.apiKey,
+        api_secret: this.apiSecret,
+        from: SENDER_ID,
+        to: fullPhoneNumber,
+        text: `Your SunoMilo verification code is: ${verificationCode}\n\nThis code expires in 10 minutes.`
+      });
 
-      console.log('Vonage SMS response:', JSON.stringify(response, null, 2));
-      if (response.messages && response.messages[0]) {
-        console.log('First message:', JSON.stringify(response.messages[0], null, 2));
-      }
+      // Send SMS via Vonage REST API
+      const response = await fetch('https://rest.nexmo.com/sms/json', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: params.toString()
+      });
+
+      const data = await response.json();
+      
+      console.log('Vonage API Response:', JSON.stringify(data, null, 2));
 
       // Check if SMS was sent successfully
-      if (response.messages && response.messages[0].status === '0') {
-        const requestId = response.messages[0]['message-id'];
-        
-        // Store verification code in database
-        await this.storeVerificationCode(fullPhoneNumber, verificationCode, requestId);
+      if (data.messages && data.messages[0]) {
+        const message = data.messages[0];
+        console.log('Message details:', JSON.stringify(message, null, 2));
 
-        console.log(`✅ SMS sent successfully! Message ID: ${requestId}`);
-        
-        return {
-          success: true,
-          requestId: requestId,
-          status: 'sent',
-          phoneNumber: fullPhoneNumber
-        };
+        if (message.status === '0') {
+          const requestId = message['message-id'];
+          
+          // Store verification code in database
+          await this.storeVerificationCode('+' + fullPhoneNumber, verificationCode, requestId);
+
+          console.log(`✅ SMS sent successfully! Message ID: ${requestId}`);
+          
+          return {
+            success: true,
+            requestId: requestId,
+            status: 'sent',
+            phoneNumber: '+' + fullPhoneNumber
+          };
+        } else {
+          const errorText = message['error-text'] || 'Unknown error';
+          const status = message.status;
+          console.error(`❌ SMS failed with status ${status}: ${errorText}`);
+          throw new Error(`Failed to send SMS (Status ${status}): ${errorText}`);
+        }
       } else {
-        const errorText = response.messages[0]['error-text'] || 'Unknown error';
-        console.error(`❌ SMS failed with status: ${response.messages[0].status}, error: ${errorText}`);
-        throw new Error(`Failed to send SMS: ${errorText}`);
+        console.error('❌ Invalid response from Vonage:', data);
+        throw new Error('Invalid response from Vonage API');
       }
     } catch (error) {
       console.error('❌ Vonage SMS sending failed:', error);
-      console.error('Error details:', error.response?.data || error.message);
       throw new Error(`Failed to send SMS: ${error.message || 'Unknown error'}`);
     }
   }
@@ -205,7 +223,7 @@ class SMSService {
    */
   async verifyCode(phoneNumber, countryCode, code, requestId) {
     try {
-      const fullPhoneNumber = this.formatPhoneNumber(phoneNumber, countryCode);
+      const fullPhoneNumber = '+' + this.formatPhoneNumber(phoneNumber, countryCode);
       
       console.log(`Verifying code for phone: ${fullPhoneNumber}, request ID: ${requestId}`);
 
