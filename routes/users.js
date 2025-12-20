@@ -8,7 +8,7 @@ router.get('/me', authMiddleware, async (req, res) => {
     const pool = req.app.locals.pool;
     
     const result = await pool.query(
-      'SELECT id, email, phone, name, age, gender, country, bio, profile_image_url, location, interests, looking_for, is_premium, created_at FROM users WHERE id = $1',
+      'SELECT id, email, phone, name, age, gender, country, bio, profile_image_url, location, interests, looking_for, min_age, max_age, relationship_type, max_distance, is_premium, created_at FROM users WHERE id = $1',
       [req.userId]
     );
 
@@ -48,11 +48,11 @@ router.get('/me', authMiddleware, async (req, res) => {
 router.put('/me', authMiddleware, async (req, res) => {
   try {
     const pool = req.app.locals.pool;
-    const { name, age, gender, bio, location, interests, looking_for } = req.body;
+    const { name, age, gender, bio, location, interests, looking_for, min_age, max_age, relationship_type, max_distance } = req.body;
 
     const result = await pool.query(
-      'UPDATE users SET name = $1, age = $2, gender = $3, bio = $4, location = $5, interests = $6, looking_for = $7, updated_at = NOW() WHERE id = $8 RETURNING *',
-      [name, age, gender, bio, location, interests, looking_for, req.userId]
+      'UPDATE users SET name = $1, age = $2, gender = $3, bio = $4, location = $5, interests = $6, looking_for = $7, min_age = $8, max_age = $9, relationship_type = $10, max_distance = $11, updated_at = NOW() WHERE id = $12 RETURNING *',
+      [name, age, gender, bio, location, interests, looking_for, min_age, max_age, relationship_type, max_distance, req.userId]
     );
 
     res.json({
