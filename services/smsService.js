@@ -15,6 +15,8 @@ class SMSService {
       apiKey: process.env.VONAGE_API_KEY,
       apiSecret: process.env.VONAGE_API_SECRET
     });
+    
+    console.log('✅ Vonage SMS Service initialized');
   }
 
   /**
@@ -55,75 +57,69 @@ class SMSService {
 
       console.log(`Sending verification to ${fullPhoneNumber} via Vonage Verify`);
 
-      // Send verification request via Vonage Verify API
-      return new Promise((resolve, reject) => {
-        this.vonage.verify.start({
-          number: fullPhoneNumber,
-          brand: 'SunoMilo',
-          code_length: 6
-        }, (err, result) => {
-          if (err) {
-            console.error('Vonage Verify error:', err);
-            reject(new Error(`Failed to send SMS: ${err.message || err.error_text}`));
-          } else {
-            console.log(`Verification sent! Request ID: ${result.request_id}, Status: ${result.status}`);
-            resolve({
-              success: true,
-              requestId: result.request_id,
-              status: result.status,
-              phoneNumber: fullPhoneNumber
-            });
-          }
-        });
+      // Send verification request via Vonage Verify API v2
+      const response = await this.vonage.verify.start({
+        number: fullPhoneNumber,
+        brand: 'SunoMilo',
+        code_length: 6,
+        workflow_id: 1 // SMS only
       });
+
+      console.log(`✅ Verification sent! Request ID: ${response.request_id}, Status: ${response.status}`);
+      
+      return {
+        success: true,
+        requestId: response.request_id,
+        status: response.status,
+        phoneNumber: fullPhoneNumber
+      };
     } catch (error) {
-      console.error('Vonage Verify sending failed:', error);
-      throw new Error(`Failed to send SMS: ${error.message}`);
+      console.error('❌ Vonage Verify sending failed:', error);
+      console.error('Error details:', error.response?.data || error.message);
+      throw new Error(`Failed to send SMS: ${error.message || 'Unknown error'}`);
     }
   }
 
   /**
-   * Verify the code entered by user
+   * Verify the code sent to phone number
    */
   async verifyCode(phoneNumber, countryCode, code, requestId) {
     try {
-      // Format phone number
-      const fullPhoneNumber = this.formatPhoneNumber(phoneNumber, countryCode);
+      console.log(`Verifying code for request ID: ${requestId}`);
 
-      console.log(`Verifying code for ${fullPhoneNumber}, Request ID: ${requestId}`);
+      // Check verification code via Vonage Verify API
+      const response = await this.vonage.verify.check(requestId, code);
 
-      // Verify code via Vonage Verify API
-      return new Promise((resolve, reject) => {
-        this.vonage.verify.check({
-          request_id: requestId,
-          code: code
-        }, (err, result) => {
-          if (err) {
-            console.error('Vonage Verify check error:', err);
-            reject(new Error(`Failed to verify code: ${err.message || err.error_text}`));
-          } else {
-            console.log(`Verification check status: ${result.status}`);
-            const isApproved = result.status === '0'; // Status 0 means success
-            resolve({
-              success: isApproved,
-              status: result.status,
-              errorText: result.error_text
-            });
-          }
-        });
-      });
+      console.log(`✅ Verification successful! Status: ${response.status}`);
+      
+      return {
+        success: true,
+        status: response.status,
+        phoneNumber: this.formatPhoneNumber(phoneNumber, countryCode)
+      };
     } catch (error) {
-      console.error('Vonage Verify check failed:', error);
-      throw new Error(`Failed to verify code: ${error.message}`);
+      console.error('❌ Vonage Verify check failed:', error);
+      console.error('Error details:', error.response?.data || error.message);
+      
+      return {
+        success: false,
+        errorText: error.message || 'Invalid verification code',
+        status: error.response?.data?.status || 'error'
+      };
     }
   }
 
   /**
-   * Get allowed countries
+   * Get list of allowed countries
    */
   getAllowedCountries() {
-    return ALLOWED_COUNTRIES;
+    return Object.entries(ALLOWED_COUNTRIES).map(([code, data]) => ({
+      code,
+      name: data.name,
+      dialCode: data.code
+    }));
   }
 }
 
+// Export singleton instance
 module.exports = new SMSService();
