@@ -114,7 +114,7 @@ router.get('/me', authMiddleware, async (req, res) => {
     const userId = req.userId;
 
     const result = await pool.query(
-      'SELECT id, email, first_name, last_name, country, city, bio, profile_photo_url, is_premium FROM users WHERE id = $1',
+      'SELECT id, email, first_name, last_name, country, location, bio, profile_image_url, is_premium FROM users WHERE id = $1',
       [userId]
     );
 
@@ -134,12 +134,12 @@ router.put('/profile', authMiddleware, async (req, res) => {
   try {
     const pool = req.app.locals.pool;
     const userId = req.userId;
-    const { first_name, last_name, bio, city, occupation, interests } = req.body;
+    const { first_name, last_name, bio, location, occupation, interests } = req.body;
 
     // Update users table
     await pool.query(
-      'UPDATE users SET first_name = $1, last_name = $2, bio = $3, city = $4, updated_at = NOW() WHERE id = $5',
-      [first_name, last_name, bio, city, userId]
+      'UPDATE users SET first_name = $1, last_name = $2, bio = $3, location = $4, updated_at = NOW() WHERE id = $5',
+      [first_name, last_name, bio, location, userId]
     );
 
     // Update or insert user_profiles
