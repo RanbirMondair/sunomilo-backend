@@ -160,11 +160,11 @@ class SMSService {
       console.log(`Using alphanumeric Sender ID: ${SENDER_ID}`);
 
       // Send SMS via Vonage SMS API with alphanumeric sender ID
-      const response = await this.vonage.sms.send({
-        to: fullPhoneNumber,
-        from: SENDER_ID, // Alphanumeric sender ID (mandatory for AT/DE/CH)
-        text: `Your SunoMilo verification code is: ${verificationCode}\n\nThis code expires in 10 minutes.`
-      });
+      const from = SENDER_ID;
+      const to = fullPhoneNumber;
+      const text = `Your SunoMilo verification code is: ${verificationCode}\n\nThis code expires in 10 minutes.`;
+      
+      const response = await this.vonage.sms.send({ to, from, text });
 
       console.log('Vonage SMS response:', response);
 
