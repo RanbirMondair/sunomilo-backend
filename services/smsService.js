@@ -1,4 +1,4 @@
-// SMS Service for Twilio Integration
+// SMS Service using Twilio Verify API
 const twilio = require('twilio');
 
 // Country codes mapping
@@ -15,7 +15,7 @@ class SMSService {
       process.env.TWILIO_ACCOUNT_SID,
       process.env.TWILIO_AUTH_TOKEN
     );
-    this.fromNumber = process.env.TWILIO_PHONE_NUMBER;
+    this.verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
   }
 
   /**
@@ -39,52 +39,74 @@ class SMSService {
   }
 
   /**
-   * Generate 6-digit verification code
+   * Format phone number with country code
    */
-  generateVerificationCode() {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+  formatPhoneNumber(phoneNumber, countryCode) {
+    const cleanPhone = this.validatePhoneNumber(phoneNumber, countryCode);
+    return ALLOWED_COUNTRIES[countryCode].code + cleanPhone;
   }
 
   /**
-   * Send SMS with verification code
+   * Send SMS verification code using Twilio Verify
    */
-  async sendVerificationSMS(phoneNumber, countryCode, verificationCode) {
+  async sendVerificationSMS(phoneNumber, countryCode) {
     try {
-      // Validate phone number
-      const cleanPhone = this.validatePhoneNumber(phoneNumber, countryCode);
-      
-      // Format phone number with country code
-      const fullPhoneNumber = ALLOWED_COUNTRIES[countryCode].code + cleanPhone;
+      // Validate and format phone number
+      const fullPhoneNumber = this.formatPhoneNumber(phoneNumber, countryCode);
 
-      // Create message
-      const message = `Dein SunoMilo Verifikationscode: ${verificationCode}\n\nDieser Code ist 10 Minuten gültig.`;
+      console.log(`Sending verification to ${fullPhoneNumber} via Twilio Verify`);
 
-      // Send SMS via Twilio
-      const result = await this.client.messages.create({
-        body: message,
-        from: this.fromNumber,
-        to: fullPhoneNumber
-      });
+      // Send verification code via Twilio Verify
+      const verification = await this.client.verify.v2
+        .services(this.verifyServiceSid)
+        .verifications
+        .create({
+          to: fullPhoneNumber,
+          channel: 'sms'
+        });
 
-      console.log(`SMS sent to ${fullPhoneNumber}, SID: ${result.sid}`);
+      console.log(`Verification sent! Status: ${verification.status}, SID: ${verification.sid}`);
 
       return {
         success: true,
-        messageSid: result.sid,
+        status: verification.status,
         phoneNumber: fullPhoneNumber
       };
     } catch (error) {
-      console.error('SMS sending failed:', error);
+      console.error('Twilio Verify sending failed:', error);
       throw new Error(`Failed to send SMS: ${error.message}`);
     }
   }
 
   /**
-   * Format phone number for storage
+   * Verify the code entered by user
    */
-  formatPhoneNumber(phoneNumber, countryCode) {
-    const cleanPhone = this.validatePhoneNumber(phoneNumber, countryCode);
-    return ALLOWED_COUNTRIES[countryCode].code + cleanPhone;
+  async verifyCode(phoneNumber, countryCode, code) {
+    try {
+      // Format phone number
+      const fullPhoneNumber = this.formatPhoneNumber(phoneNumber, countryCode);
+
+      console.log(`Verifying code for ${fullPhoneNumber}`);
+
+      // Verify code via Twilio Verify
+      const verificationCheck = await this.client.verify.v2
+        .services(this.verifyServiceSid)
+        .verificationChecks
+        .create({
+          to: fullPhoneNumber,
+          code: code
+        });
+
+      console.log(`Verification check status: ${verificationCheck.status}`);
+
+      return {
+        success: verificationCheck.status === 'approved',
+        status: verificationCheck.status
+      };
+    } catch (error) {
+      console.error('Twilio Verify check failed:', error);
+      throw new Error(`Failed to verify code: ${error.message}`);
+    }
   }
 
   /**
