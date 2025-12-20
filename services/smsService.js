@@ -168,7 +168,10 @@ class SMSService {
       // Use the SMS client from vonage instance
       const response = await this.vonage.sms.send({ to, from, text });
 
-      console.log('Vonage SMS response:', response);
+      console.log('Vonage SMS response:', JSON.stringify(response, null, 2));
+      if (response.messages && response.messages[0]) {
+        console.log('First message:', JSON.stringify(response.messages[0], null, 2));
+      }
 
       // Check if SMS was sent successfully
       if (response.messages && response.messages[0].status === '0') {
