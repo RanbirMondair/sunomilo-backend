@@ -66,6 +66,8 @@ app.locals.io = io;
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/profiles', require('./routes/profiles'));
+app.use('/api/discovery', require('./routes/discovery'));
+app.use('/api', require('./routes/discovery')); // For /api/like endpoint
 app.use('/api/likes', require('./routes/likes'));
 app.use('/api/matches', require('./routes/matches'));
 app.use('/api/messages', require('./routes/messages'));
