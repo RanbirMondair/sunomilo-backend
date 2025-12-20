@@ -9,21 +9,79 @@ router.get('/', authMiddleware, async (req, res) => {
     const userId = req.userId;
     const { country, limit = 50 } = req.query;
 
-    // Get users that:
-    // 1. Are not the current user
-    // 2. Have not been liked/passed by current user
-    // 3. Match country filter (if provided)
+    // Get current user's preferences
+    const userPrefs = await pool.query(
+      `SELECT looking_for, min_age, max_age, relationship_type, interests, max_distance, gender
+       FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    if (userPrefs.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const prefs = userPrefs.rows[0];
+
+    // Build dynamic WHERE conditions
+    let conditions = ['u.id != $1'];
+    let params = [userId, limit];
+    let paramIndex = 3;
+
+    // Filter by country
+    if (country) {
+      conditions.push(`u.country = $${paramIndex}`);
+      params.push(country);
+      paramIndex++;
+    }
+
+    // Filter by gender preference (looking_for)
+    if (prefs.looking_for && prefs.looking_for !== 'all') {
+      conditions.push(`u.gender = $${paramIndex}`);
+      params.push(prefs.looking_for);
+      paramIndex++;
+    }
+
+    // Filter by age range
+    if (prefs.min_age) {
+      conditions.push(`u.age >= $${paramIndex}`);
+      params.push(prefs.min_age);
+      paramIndex++;
+    }
+
+    if (prefs.max_age) {
+      conditions.push(`u.age <= $${paramIndex}`);
+      params.push(prefs.max_age);
+      paramIndex++;
+    }
+
+    // Filter by relationship type (if user has preference)
+    if (prefs.relationship_type) {
+      conditions.push(`(u.relationship_type = $${paramIndex} OR u.relationship_type IS NULL)`);
+      params.push(prefs.relationship_type);
+      paramIndex++;
+    }
+
+    // Filter: User must be looking for current user's gender (or 'all')
+    if (prefs.gender) {
+      conditions.push(`(u.looking_for = $${paramIndex} OR u.looking_for = 'all')`);
+      params.push(prefs.gender);
+      paramIndex++;
+    }
+
+    // Exclude users already liked/passed
+    conditions.push('u.id NOT IN (SELECT liked_user_id FROM likes WHERE user_id = $1)');
+
+    const whereClause = conditions.join(' AND ');
+
+    // Get users that match all filters
     const result = await pool.query(
-      `SELECT u.id, u.first_name, u.last_name, u.age, u.gender, u.location, u.bio, u.profile_image_url
+      `SELECT u.id, u.first_name, u.last_name, u.age, u.gender, u.location, u.bio, 
+              u.profile_image_url, u.interests, u.relationship_type
        FROM users u
-       WHERE u.id != $1
-       AND u.id NOT IN (
-         SELECT liked_user_id FROM likes WHERE user_id = $1
-       )
-       ${country ? 'AND u.country = $3' : ''}
+       WHERE ${whereClause}
        ORDER BY RANDOM()
        LIMIT $2`,
-      country ? [userId, limit, country] : [userId, limit]
+      params
     );
 
     res.json({ users: result.rows });
