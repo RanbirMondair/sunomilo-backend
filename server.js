@@ -64,6 +64,7 @@ app.locals.io = io;
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/auth', require('./routes/refresh-token'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/profiles', require('./routes/profiles'));
 // app.use('/api/profiles', require('./routes/photo-upload')); // Temporarily disabled
