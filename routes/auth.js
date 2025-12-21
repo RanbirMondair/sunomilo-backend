@@ -114,7 +114,10 @@ router.get('/me', authMiddleware, async (req, res) => {
     const userId = req.userId;
 
     const result = await pool.query(
-      'SELECT id, email, first_name, last_name, country, location, bio, profile_image_url, is_premium FROM users WHERE id = $1',
+      `SELECT id, email, first_name, last_name, country, location, bio, profile_image_url, profile_images,
+              age, gender, looking_for, min_age, max_age, max_distance, relationship_type, interests,
+              is_premium, latitude, longitude, current_latitude, current_longitude
+       FROM users WHERE id = $1`,
       [userId]
     );
 
@@ -134,12 +137,30 @@ router.put('/profile', authMiddleware, async (req, res) => {
   try {
     const pool = req.app.locals.pool;
     const userId = req.userId;
-    const { first_name, last_name, bio, location, occupation, interests } = req.body;
+    const { 
+      first_name, last_name, bio, location, occupation, interests,
+      age, gender, looking_for, min_age, max_age, max_distance, relationship_type
+    } = req.body;
 
-    // Update users table
+    // Update users table with all fields
     await pool.query(
-      'UPDATE users SET first_name = $1, last_name = $2, bio = $3, location = $4, updated_at = NOW() WHERE id = $5',
-      [first_name, last_name, bio, location, userId]
+      `UPDATE users SET 
+        first_name = $1, 
+        last_name = $2, 
+        bio = $3, 
+        location = $4, 
+        age = $5,
+        gender = $6,
+        looking_for = $7,
+        min_age = $8,
+        max_age = $9,
+        max_distance = $10,
+        relationship_type = $11,
+        interests = $12,
+        updated_at = NOW() 
+      WHERE id = $13`,
+      [first_name, last_name, bio, location, age, gender, looking_for, 
+       min_age, max_age, max_distance, relationship_type, interests, userId]
     );
 
     // Update or insert user_profiles
