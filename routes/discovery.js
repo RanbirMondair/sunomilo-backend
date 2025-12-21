@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
+const { calculateDistance } = require('../services/geocoding');
 
 // Get discovery users (for swiping)
 router.get('/', authMiddleware, async (req, res) => {
@@ -9,9 +10,10 @@ router.get('/', authMiddleware, async (req, res) => {
     const userId = req.userId;
     const { country, limit = 50 } = req.query;
 
-    // Get current user's preferences
+    // Get current user's preferences and location
     const userPrefs = await pool.query(
-      `SELECT looking_for, min_age, max_age, relationship_type, interests, max_distance, gender
+      `SELECT looking_for, min_age, max_age, relationship_type, interests, max_distance, gender,
+              current_latitude, current_longitude, latitude, longitude
        FROM users WHERE id = $1`,
       [userId]
     );
@@ -21,6 +23,10 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 
     const prefs = userPrefs.rows[0];
+    
+    // Use current location if available, otherwise use home location
+    const userLat = prefs.current_latitude || prefs.latitude;
+    const userLon = prefs.current_longitude || prefs.longitude;
 
     // Build dynamic WHERE conditions
     let conditions = ['u.id != $1'];
@@ -73,10 +79,11 @@ router.get('/', authMiddleware, async (req, res) => {
 
     const whereClause = conditions.join(' AND ');
 
-    // Get users that match all filters
+    // Get users that match all filters (including GPS coordinates)
     const result = await pool.query(
       `SELECT u.id, u.first_name, u.last_name, u.age, u.gender, u.location, u.bio, 
-              u.profile_image_url, u.interests, u.relationship_type
+              u.profile_image_url, u.interests, u.relationship_type,
+              u.current_latitude, u.current_longitude, u.latitude, u.longitude
        FROM users u
        WHERE ${whereClause}
        ORDER BY (u.profile_image_url IS NOT NULL) DESC, RANDOM()
@@ -84,7 +91,32 @@ router.get('/', authMiddleware, async (req, res) => {
       params
     );
 
-    res.json({ users: result.rows });
+    // Filter by distance if user has GPS coordinates and max_distance preference
+    let users = result.rows;
+    
+    if (userLat && userLon && prefs.max_distance) {
+      users = users.filter(user => {
+        // Use current location if available, otherwise use home location
+        const targetLat = user.current_latitude || user.latitude;
+        const targetLon = user.current_longitude || user.longitude;
+        
+        // Skip users without any location data
+        if (!targetLat || !targetLon) {
+          return true; // Include users without location data
+        }
+        
+        const distance = calculateDistance(userLat, userLon, targetLat, targetLon);
+        return distance <= prefs.max_distance;
+      });
+    }
+
+    // Remove GPS coordinates from response (privacy)
+    users = users.map(user => {
+      const { current_latitude, current_longitude, latitude, longitude, ...userWithoutCoords } = user;
+      return userWithoutCoords;
+    });
+
+    res.json({ users });
   } catch (error) {
     console.error('Discovery error:', error);
     res.status(500).json({ error: 'Failed to load discovery users' });
