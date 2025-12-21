@@ -4,7 +4,6 @@ const multer = require('multer');
 const authenticateToken = require('../middleware/auth');
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { v4: uuidv4 } = require('uuid');
-const db = require('../db');
 
 // Configure multer for memory storage
 const upload = multer({
@@ -33,6 +32,7 @@ const s3Client = new S3Client({
 // Upload photos
 router.post('/upload-photos', authenticateToken, upload.array('photos', 6), async (req, res) => {
   try {
+    const pool = req.app.locals.pool;
     const userId = req.user.id;
     const files = req.files;
 
@@ -41,14 +41,17 @@ router.post('/upload-photos', authenticateToken, upload.array('photos', 6), asyn
     }
 
     // Get current photos
-    const [users] = await db.query(
-      'SELECT profile_images FROM users WHERE id = ?',
+    const result = await pool.query(
+      'SELECT profile_images FROM users WHERE id = $1',
       [userId]
     );
 
     let currentPhotos = [];
     try {
-      currentPhotos = users[0].profile_images ? JSON.parse(users[0].profile_images) : [];
+      currentPhotos = result.rows[0]?.profile_images || [];
+      if (typeof currentPhotos === 'string') {
+        currentPhotos = JSON.parse(currentPhotos);
+      }
     } catch (e) {
       currentPhotos = [];
     }
@@ -82,9 +85,9 @@ router.post('/upload-photos', authenticateToken, upload.array('photos', 6), asyn
     // Update database
     const newPhotos = [...currentPhotos, ...uploadedUrls];
     
-    await db.query(
-      'UPDATE users SET profile_images = ? WHERE id = ?',
-      [JSON.stringify(newPhotos), userId]
+    await pool.query(
+      'UPDATE users SET profile_images = $1 WHERE id = $2',
+      [newPhotos, userId]
     );
 
     res.json({
@@ -100,6 +103,7 @@ router.post('/upload-photos', authenticateToken, upload.array('photos', 6), asyn
 // Delete photo
 router.delete('/delete-photo', authenticateToken, async (req, res) => {
   try {
+    const pool = req.app.locals.pool;
     const userId = req.user.id;
     const { photoUrl } = req.body;
 
@@ -108,14 +112,17 @@ router.delete('/delete-photo', authenticateToken, async (req, res) => {
     }
 
     // Get current photos
-    const [users] = await db.query(
-      'SELECT profile_images FROM users WHERE id = ?',
+    const result = await pool.query(
+      'SELECT profile_images FROM users WHERE id = $1',
       [userId]
     );
 
     let currentPhotos = [];
     try {
-      currentPhotos = users[0].profile_images ? JSON.parse(users[0].profile_images) : [];
+      currentPhotos = result.rows[0]?.profile_images || [];
+      if (typeof currentPhotos === 'string') {
+        currentPhotos = JSON.parse(currentPhotos);
+      }
     } catch (e) {
       currentPhotos = [];
     }
@@ -140,9 +147,9 @@ router.delete('/delete-photo', authenticateToken, async (req, res) => {
     }
 
     // Update database
-    await db.query(
-      'UPDATE users SET profile_images = ? WHERE id = ?',
-      [JSON.stringify(newPhotos), userId]
+    await pool.query(
+      'UPDATE users SET profile_images = $1 WHERE id = $2',
+      [newPhotos, userId]
     );
 
     res.json({
