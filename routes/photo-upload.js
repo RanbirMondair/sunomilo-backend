@@ -69,16 +69,15 @@ router.post('/upload-photos', authMiddleware, upload.array('photos', 6), async (
       const fileName = `profile-photos/${userId}/${uuidv4()}.${fileExtension}`;
 
       const command = new PutObjectCommand({
-        Bucket: process.env.S3_BUCKET_NAME || 'sunomilo-uploads',
+        Bucket: process.env.S3_BUCKET_NAME || 'sunomilo-photos',
         Key: fileName,
         Body: file.buffer,
-        ContentType: file.mimetype,
-        ACL: 'public-read'
+        ContentType: file.mimetype
       });
 
       await s3Client.send(command);
 
-      const photoUrl = `https://${process.env.S3_BUCKET_NAME || 'sunomilo-uploads'}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${fileName}`;
+      const photoUrl = `https://${process.env.S3_BUCKET_NAME || 'sunomilo-photos'}.s3.${process.env.AWS_REGION || 'eu-central-1'}.amazonaws.com/${fileName}`;
       uploadedUrls.push(photoUrl);
     }
 
@@ -136,7 +135,7 @@ router.delete('/delete-photo', authMiddleware, async (req, res) => {
       const fileName = urlParts.slice(-3).join('/'); // profile-photos/userId/filename
 
       const command = new DeleteObjectCommand({
-        Bucket: process.env.S3_BUCKET_NAME || 'sunomilo-uploads',
+        Bucket: process.env.S3_BUCKET_NAME || 'sunomilo-photos',
         Key: fileName
       });
 
