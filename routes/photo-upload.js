@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const authenticateToken = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { v4: uuidv4 } = require('uuid');
 
@@ -30,10 +30,10 @@ const s3Client = new S3Client({
 });
 
 // Upload photos
-router.post('/upload-photos', authenticateToken, upload.array('photos', 6), async (req, res) => {
+router.post('/upload-photos', authMiddleware, upload.array('photos', 6), async (req, res) => {
   try {
     const pool = req.app.locals.pool;
-    const userId = req.user.id;
+    const userId = req.userId;
     const files = req.files;
 
     if (!files || files.length === 0) {
@@ -101,10 +101,10 @@ router.post('/upload-photos', authenticateToken, upload.array('photos', 6), asyn
 });
 
 // Delete photo
-router.delete('/delete-photo', authenticateToken, async (req, res) => {
+router.delete('/delete-photo', authMiddleware, async (req, res) => {
   try {
     const pool = req.app.locals.pool;
-    const userId = req.user.id;
+    const userId = req.userId;
     const { photoUrl } = req.body;
 
     if (!photoUrl) {
