@@ -82,11 +82,11 @@ router.get('/', authMiddleware, async (req, res) => {
     // Get users that match all filters (including GPS coordinates)
     const result = await pool.query(
       `SELECT u.id, u.first_name, u.last_name, u.age, u.gender, u.location, u.bio, 
-              u.profile_image_url, u.interests, u.relationship_type,
+              u.profile_image_url, u.profile_images, u.interests, u.relationship_type,
               u.current_latitude, u.current_longitude, u.latitude, u.longitude
        FROM users u
        WHERE ${whereClause}
-       ORDER BY (u.profile_image_url IS NOT NULL) DESC, RANDOM()
+       ORDER BY (u.profile_image_url IS NOT NULL OR u.profile_images IS NOT NULL) DESC, RANDOM()
        LIMIT $2`,
       params
     );

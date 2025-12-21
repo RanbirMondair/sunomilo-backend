@@ -145,6 +145,21 @@ router.post('/images/upload', authMiddleware, upload.array('images', 5), async (
       uploadedImages.push(dbResult.rows[0]);
     }
 
+    // Sync profile_images array in users table
+    const imageUrls = uploadedImages.map(img => img.image_url);
+    await pool.query(
+      'UPDATE users SET profile_images = array_cat(COALESCE(profile_images, ARRAY[]::text[]), $1::text[]) WHERE id = $2',
+      [imageUrls, req.userId]
+    );
+
+    // Update profile_image_url to first image if not set
+    if (imageUrls.length > 0) {
+      await pool.query(
+        'UPDATE users SET profile_image_url = COALESCE(profile_image_url, $1) WHERE id = $2',
+        [imageUrls[0], req.userId]
+      );
+    }
+
     res.json({
       success: true,
       images: uploadedImages

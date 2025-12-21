@@ -77,6 +77,7 @@ app.use('/api/verification', require('./routes/verification'));
 app.use('/api/migrate', require('./routes/migrate'));
 app.use('/api/seed', require('./routes/seed_profiles'));
 app.use('/api/location', require('./routes/location'));
+app.use('/api/profile-images', require('./routes/sync_profile_images'));
 
 // Health check
 app.get('/api/health', (req, res) => {
