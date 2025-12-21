@@ -163,13 +163,7 @@ router.put('/profile', authMiddleware, async (req, res) => {
        min_age, max_age, max_distance, relationship_type, interests, userId]
     );
 
-    // Update or insert user_profiles
-    await pool.query(
-      `INSERT INTO user_profiles (user_id, occupation, interests) 
-       VALUES ($1, $2, $3) 
-       ON CONFLICT (user_id) DO UPDATE SET occupation = $2, interests = $3`,
-      [userId, occupation, interests]
-    );
+    // Note: interests are already stored in users table above
 
     res.json({ success: true, message: 'Profile updated' });
   } catch (error) {
