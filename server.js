@@ -67,7 +67,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/auth', require('./routes/refresh-token'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/profiles', require('./routes/profiles'));
-// app.use('/api/photos', require('./routes/photo-upload')); // Temporarily disabled - needs S3 config
+app.use('/api/photos', require('./routes/photo-upload'));
 app.use('/api/discovery', require('./routes/discovery'));
 app.use('/api', require('./routes/discovery')); // For /api/like endpoint
 app.use('/api/likes', require('./routes/likes'));
