@@ -120,4 +120,25 @@ router.get('/sent', authMiddleware, async (req, res) => {
   }
 });
 
+// Reset all likes for current user (for testing)
+router.delete('/reset', authMiddleware, async (req, res) => {
+  try {
+    const pool = req.app.locals.pool;
+
+    const result = await pool.query(
+      'DELETE FROM likes WHERE user_id = $1 OR liked_user_id = $1',
+      [req.userId]
+    );
+
+    res.json({
+      success: true,
+      message: `Deleted ${result.rowCount} likes`,
+      count: result.rowCount
+    });
+  } catch (error) {
+    console.error('Reset likes error:', error);
+    res.status(500).json({ error: 'Failed to reset likes' });
+  }
+});
+
 module.exports = router;
