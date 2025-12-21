@@ -110,10 +110,27 @@ router.get('/', authMiddleware, async (req, res) => {
       });
     }
 
-    // Remove GPS coordinates from response (privacy)
+    // Calculate distance and remove GPS coordinates from response (privacy)
     users = users.map(user => {
       const { current_latitude, current_longitude, latitude, longitude, ...userWithoutCoords } = user;
-      return userWithoutCoords;
+      
+      // Calculate distance if both users have location data
+      let distance = null;
+      if (userLat && userLon) {
+        const targetLat = current_latitude || latitude;
+        const targetLon = current_longitude || longitude;
+        
+        if (targetLat && targetLon) {
+          const actualDistance = calculateDistance(userLat, userLon, targetLat, targetLon);
+          // Minimum 5km for privacy (anti-stalking)
+          distance = Math.max(5, Math.round(actualDistance));
+        }
+      }
+      
+      return {
+        ...userWithoutCoords,
+        distance // Distance in km, minimum 5km
+      };
     });
 
     res.json({ users });
