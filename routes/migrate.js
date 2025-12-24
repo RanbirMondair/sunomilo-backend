@@ -82,7 +82,7 @@ router.post('/phase1', async (req, res) => {
     try {
       await pool.query(`
         ALTER TABLE users
-        ADD COLUMN IF NOT EXISTS subscription_type ENUM('free', 'premium') DEFAULT 'free',
+        ADD COLUMN IF NOT EXISTS subscription_type VARCHAR(20) DEFAULT 'free',
         ADD COLUMN IF NOT EXISTS subscription_start DATE DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS subscription_end DATE DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS daily_likes_used INT DEFAULT 0,
