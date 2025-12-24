@@ -137,4 +137,90 @@ router.post('/phase1', async (req, res) => {
   }
 });
 
+// Phase 1b: Premium columns only (separate to avoid ENUM issues)
+router.post('/phase1-premium', async (req, res) => {
+  try {
+    const pool = req.app.locals.pool;
+    
+    if (!pool) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database pool not available'
+      });
+    }
+    
+    console.log('🔄 Adding premium columns...');
+    
+    const results = [];
+    
+    // Add subscription_type column
+    try {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_type VARCHAR(20) DEFAULT 'free'`);
+      results.push({ column: 'subscription_type', status: 'success' });
+    } catch (err) {
+      results.push({ column: 'subscription_type', status: 'error', error: err.message });
+    }
+    
+    // Add subscription_start column
+    try {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_start DATE DEFAULT NULL`);
+      results.push({ column: 'subscription_start', status: 'success' });
+    } catch (err) {
+      results.push({ column: 'subscription_start', status: 'error', error: err.message });
+    }
+    
+    // Add subscription_end column
+    try {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_end DATE DEFAULT NULL`);
+      results.push({ column: 'subscription_end', status: 'success' });
+    } catch (err) {
+      results.push({ column: 'subscription_end', status: 'error', error: err.message });
+    }
+    
+    // Add daily_likes_used column
+    try {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_likes_used INT DEFAULT 0`);
+      results.push({ column: 'daily_likes_used', status: 'success' });
+    } catch (err) {
+      results.push({ column: 'daily_likes_used', status: 'error', error: err.message });
+    }
+    
+    // Add daily_likes_reset_at column
+    try {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_likes_reset_at TIMESTAMP DEFAULT NULL`);
+      results.push({ column: 'daily_likes_reset_at', status: 'success' });
+    } catch (err) {
+      results.push({ column: 'daily_likes_reset_at', status: 'error', error: err.message });
+    }
+    
+    // Update existing users
+    try {
+      const updateResult = await pool.query(`
+        UPDATE users SET 
+          subscription_type = 'free',
+          daily_likes_used = 0
+        WHERE subscription_type IS NULL
+      `);
+      results.push({ step: 'update_defaults', status: 'success', rowsUpdated: updateResult.rowCount });
+    } catch (err) {
+      results.push({ step: 'update_defaults', status: 'error', error: err.message });
+    }
+    
+    console.log('✅ Premium columns added!');
+    
+    res.json({
+      success: true,
+      message: 'Premium columns added',
+      results
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
