@@ -13,6 +13,44 @@ router.post('/:userId', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Cannot like yourself' });
     }
 
+    // Check like limits for FREE users
+    if (is_like) {
+      const userResult = await pool.query(
+        'SELECT subscription_type, daily_likes_used, daily_likes_reset_at FROM users WHERE id = $1',
+        [req.userId]
+      );
+      
+      const user = userResult.rows[0];
+      const now = new Date();
+      const resetTime = user.daily_likes_reset_at ? new Date(user.daily_likes_reset_at) : null;
+      
+      // Reset daily likes if it's a new day
+      if (!resetTime || now > resetTime) {
+        await pool.query(
+          'UPDATE users SET daily_likes_used = 0, daily_likes_reset_at = $1 WHERE id = $2',
+          [new Date(now.getTime() + 24 * 60 * 60 * 1000), req.userId] // Reset in 24 hours
+        );
+        user.daily_likes_used = 0;
+      }
+      
+      // Check if FREE user has exceeded daily limit (5 likes/day)
+      if (user.subscription_type === 'free' && user.daily_likes_used >= 5) {
+        return res.status(403).json({ 
+          error: 'Daily like limit reached',
+          message: 'Du hast dein tägliches Limit von 5 Likes erreicht. Upgrade auf Premium für unbegrenzte Likes!',
+          upgrade_required: true
+        });
+      }
+      
+      // Increment daily likes counter for FREE users
+      if (user.subscription_type === 'free') {
+        await pool.query(
+          'UPDATE users SET daily_likes_used = daily_likes_used + 1 WHERE id = $1',
+          [req.userId]
+        );
+      }
+    }
+
     // Check if user exists
     const userExists = await pool.query(
       'SELECT id FROM users WHERE id = $1',
