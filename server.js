@@ -4,6 +4,7 @@ const dotenv = require('dotenv');
 const http = require('http');
 const socketIO = require('socket.io');
 const { Pool } = require('pg');
+const { Vonage } = require('@vonage/server-sdk'); // <--- NEU: Import
 
 // Load environment variables
 dotenv.config();
@@ -19,6 +20,13 @@ const io = socketIO(server, {
     origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     methods: ['GET', 'POST']
   }
+});
+
+// --- NEU: Vonage Initialisierung ---
+// Nutzt die Variablen, die du in Railway eingetragen hast
+const vonage = new Vonage({
+  apiKey: process.env.VONAGE_API_KEY,
+  apiSecret: process.env.VONAGE_API_SECRET
 });
 
 // Middleware
@@ -80,6 +88,58 @@ app.use('/api/migrate', require('./routes/migrate'));
 app.use('/api/seed', require('./routes/seed_profiles'));
 app.use('/api/location', require('./routes/location'));
 app.use('/api/profile-images', require('./routes/sync_profile_images'));
+
+// --- NEU: SMS ROUTEN FÜR VONAGE ---
+
+// 1. SMS Senden
+app.post('/api/send-code', async (req, res) => {
+  const { phoneNumber } = req.body;
+  console.log("📨 Versuche SMS zu senden an:", phoneNumber);
+
+  try {
+    const result = await vonage.verify.request({
+      number: phoneNumber,
+      brand: "SunoMilo"
+    });
+    
+    console.log("Vonage Result:", result);
+
+    if (result.request_id) {
+       res.json({ success: true, requestId: result.request_id });
+    } else {
+       res.status(400).json({ success: false, message: result.error_text || "Fehler bei Vonage" });
+    }
+  } catch (error) {
+    console.error("❌ Server Error bei SMS:", error);
+    res.status(500).json({ success: false, message: 'Interner SMS Fehler' });
+  }
+});
+
+// 2. Code Prüfen
+app.post('/api/verify-code', async (req, res) => {
+  const { requestId, code } = req.body;
+  console.log(`🔍 Prüfe Code ${code} für ID ${requestId}`);
+
+  try {
+    const result = await vonage.verify.check({
+      request_id: requestId,
+      code: code
+    });
+
+    if (result.status === '0') {
+      console.log("✅ Verifizierung erfolgreich!");
+      res.json({ success: true });
+    } else {
+      console.log("❌ Falscher Code");
+      res.status(400).json({ success: false, message: 'Falscher Code' });
+    }
+  } catch (error) {
+    console.error("❌ Verify Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ------------------------------------
 
 // Health check
 app.get('/api/health', (req, res) => {
