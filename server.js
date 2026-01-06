@@ -91,6 +91,34 @@ app.post('/send-sms', async (req, res) => {
     }
 });
 
+// ... dein ganzer Code von vorhin ...
+
+// --- TEST-BLOCK: SMS DIREKT BEIM START SENDEN ---
+// (Diesen Block kannst du später wieder löschen)
+if (vonage) {
+  const testNummer = "436603174740"; // Deine Nummer
+  const testText = "Hallo! Der Server funktioniert und sendet SMS.";
+
+  console.log("📨 Versuche Test-SMS beim Server-Start zu senden...");
+  
+  vonage.sms.send({ to: testNummer, from: "Sunomilo", text: testText })
+      .then(resp => {
+        // Vonage antwortet immer, auch bei Fehlern (z.B. Guthaben leer)
+        const status = resp.messages[0].status;
+        if (status === "0") {
+          console.log("✅ SMS ERFOLGREICH VERSENDET!");
+        } else {
+          console.log(`❌ SMS FEHLGESCHLAGEN. Vonage Status: ${status}`);
+          console.log("Fehler-Details:", resp.messages[0]['error-text']);
+        }
+      })
+      .catch(err => {
+        console.error("❌ NETZWERK/API FEHLER:", err);
+      });
+}
+// --- ENDE TEST-BLOCK ---
+
+// app.listen(...) kommt hier drunter
 
 // --- SERVER STARTEN ---
 app.listen(port, () => {
