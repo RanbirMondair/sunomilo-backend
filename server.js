@@ -4,7 +4,7 @@ const dotenv = require('dotenv');
 const http = require('http');
 const socketIO = require('socket.io');
 const { Pool } = require('pg');
-const { Vonage } = require('@vonage/server-sdk'); // <--- NEU: Import
+const { Vonage } = require('@vonage/server-sdk'); // Vonage Import
 
 // Load environment variables
 dotenv.config();
@@ -22,8 +22,7 @@ const io = socketIO(server, {
   }
 });
 
-// --- NEU: Vonage Initialisierung ---
-// Nutzt die Variablen, die du in Railway eingetragen hast
+// --- VONAGE INITIALISIERUNG ---
 const vonage = new Vonage({
   apiKey: process.env.VONAGE_API_KEY,
   apiSecret: process.env.VONAGE_API_SECRET
@@ -37,7 +36,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Database connection (optional)
+// Database connection
 let pool = null;
 if (process.env.DATABASE_URL) {
   pool = new Pool({
@@ -70,7 +69,7 @@ if (process.env.DATABASE_URL) {
 app.locals.pool = pool;
 app.locals.io = io;
 
-// Routes
+// --- EXISTING ROUTES ---
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/auth', require('./routes/refresh-token'));
 app.use('/api/users', require('./routes/users'));
@@ -89,28 +88,42 @@ app.use('/api/seed', require('./routes/seed_profiles'));
 app.use('/api/location', require('./routes/location'));
 app.use('/api/profile-images', require('./routes/sync_profile_images'));
 
-// --- NEU: SMS ROUTEN FÜR VONAGE ---
+
+// ==========================================
+//    NEUE VONAGE SMS ROUTEN (VERIFY V2)
+// ==========================================
 
 // 1. SMS Senden
 app.post('/api/send-code', async (req, res) => {
-  const { phoneNumber } = req.body;
+  let { phoneNumber } = req.body;
+  
+  // WICHTIG: Nummer muss mit '+' beginnen für die V2 API
+  // Wenn die App nur "4366..." schickt, machen wir "+4366..." daraus
+  if (phoneNumber && !phoneNumber.toString().startsWith('+')) {
+    phoneNumber = '+' + phoneNumber;
+  }
+
   console.log("📨 Versuche SMS zu senden an:", phoneNumber);
 
   try {
-    const result = await vonage.verify.request({
-      number: phoneNumber,
-      brand: "SunoMilo"
+    // Neue V2 Methode: newRequest statt request
+    const result = await vonage.verify2.newRequest({
+      brand: 'SunoMilo',
+      workflow: [
+        { channel: 'sms', to: phoneNumber }
+      ]
     });
     
-    console.log("Vonage Result:", result);
+    console.log("✅ Vonage Result:", result);
+    
+    // requestId zurücksenden
+    res.json({ success: true, requestId: result.requestId });
 
-    if (result.request_id) {
-       res.json({ success: true, requestId: result.request_id });
-    } else {
-       res.status(400).json({ success: false, message: result.error_text || "Fehler bei Vonage" });
-    }
   } catch (error) {
     console.error("❌ Server Error bei SMS:", error);
+    if (error.response) {
+        console.error("Vonage Antwort:", error.response.data);
+    }
     res.status(500).json({ success: false, message: 'Interner SMS Fehler' });
   }
 });
@@ -121,25 +134,19 @@ app.post('/api/verify-code', async (req, res) => {
   console.log(`🔍 Prüfe Code ${code} für ID ${requestId}`);
 
   try {
-    const result = await vonage.verify.check({
-      request_id: requestId,
-      code: code
-    });
+    // V2 Methode: checkCode
+    const result = await vonage.verify2.checkCode(requestId, code);
 
-    if (result.status === '0') {
-      console.log("✅ Verifizierung erfolgreich!");
-      res.json({ success: true });
-    } else {
-      console.log("❌ Falscher Code");
-      res.status(400).json({ success: false, message: 'Falscher Code' });
-    }
+    console.log("✅ Verifizierung erfolgreich!");
+    res.json({ success: true });
+
   } catch (error) {
-    console.error("❌ Verify Error:", error);
-    res.status(500).json({ success: false, message: error.message });
+    console.log("❌ Code ungültig oder Fehler:", error.message);
+    res.status(400).json({ success: false, message: 'Falscher Code' });
   }
 });
+// ==========================================
 
-// ------------------------------------
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -150,23 +157,19 @@ app.get('/api/health', (req, res) => {
 io.on('connection', (socket) => {
   console.log('🔗 User connected:', socket.id);
 
-  // Join match room
   socket.on('join_match', (matchId) => {
     socket.join(`match_${matchId}`);
     console.log(`User ${socket.id} joined match ${matchId}`);
   });
 
-  // Send message
   socket.on('send_message', (data) => {
     io.to(`match_${data.matchId}`).emit('receive_message', data);
   });
 
-  // Typing indicator
   socket.on('typing', (data) => {
     socket.to(`match_${data.matchId}`).emit('user_typing', data);
   });
 
-  // Disconnect
   socket.on('disconnect', () => {
     console.log('🔌 User disconnected:', socket.id);
   });
