@@ -1,118 +1,59 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
+const { Pool } = require('pg');
 const { Vonage } = require('@vonage/server-sdk');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Datenbank-Verbindung (Railway nutzt DATABASE_URL)
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
 app.use(cors());
 app.use(express.json());
 
-// --- KONFIGURATIONEN ---
-
-// 1. Vonage (SMS)
-let vonage;
-if (process.env.VONAGE_API_KEY && process.env.VONAGE_API_SECRET) {
-    vonage = new Vonage({
-        apiKey: process.env.VONAGE_API_KEY,
-        apiSecret: process.env.VONAGE_API_SECRET
-    });
-}
-
-// 2. Geocoding Helper (Deine Funktion)
-async function getCoordinatesFromLocation(location) {
-  try {
-    if (!location) return null;
-    console.log(`🔍 Suche GPS für: ${location}`);
-    const response = await axios.get('https://nominatim.openstreetmap.org/search', {
-      params: { q: location, format: 'json', limit: 1 },
-      headers: { 'User-Agent': 'SunoMilo-Dating-App/1.0' }
-    });
-    if (response.data && response.data.length > 0) {
-      const result = response.data[0];
-      return { latitude: parseFloat(result.lat), longitude: parseFloat(result.lon) };
-    }
-    return null;
-  } catch (error) {
-    console.error('Geocoding Fehler:', error.message);
-    return null;
-  }
-}
-
-// --- ROUTEN ---
-
-app.get('/', (req, res) => {
-  res.send('SunoMilo Server läuft! (Login, SMS & Geo aktiv) 🚀');
+const vonage = new Vonage({
+  apiKey: process.env.VONAGE_API_KEY,
+  apiSecret: process.env.VONAGE_API_SECRET
 });
 
-// A. SMS ROUTE
+// TEST-ROUTE
+app.get('/', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT NOW()');
+    res.json({ message: 'SunoMilo API läuft!', db_time: result.rows[0].now });
+  } catch (err) {
+    res.status(500).json({ error: 'DB Verbindung fehlgeschlagen' });
+  }
+});
+
+// SMS SENDEN & IN DB SPEICHERN
 app.post('/send-sms', async (req, res) => {
     const { to, text } = req.body;
-    if (!vonage) return res.json({ success: true, simulated: true }); // Fallback falls keine Keys
+    // Extrahiere den Code aus dem Text (letzte 4 Ziffern)
+    const code = text.match(/\d+/)[0];
+
     try {
-        await vonage.sms.send({ to, from: "SunoMilo", text });
+        // 1. SMS versenden
+        await vonage.sms.send({ to, from: "Sunomilo", text });
+
+        // 2. In DB merken (oder updaten falls Nummer existiert)
+        await pool.query(
+            'INSERT INTO users (phone, verification_code, name, email, password_hash) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (phone) DO UPDATE SET verification_code = $2',
+            [to, code, 'TestUser', `${to}@temp.com`, 'placeholder']
+        );
+
         res.json({ success: true });
     } catch (error) {
         console.error(error);
-        res.json({ success: true, simulated: true }); // Fehler ignorieren damit App weiterläuft
+        res.status(500).json({ error: error.message });
     }
 });
 
-// B. LOGIN ROUTE (WICHTIG: Die hat gefehlt!)
-app.post('/api/auth/login', (req, res) => {
-    const { email, password } = req.body;
-    console.log(`🔑 Login Versuch: ${email}`);
-    
-    // Simulation: Wir lassen jeden rein
-    res.json({
-        success: true,
-        token: "simulierter-token-123",
-        user: {
-            id: 1,
-            email: email,
-            name: "Test User",
-            location: "Wien, Österreich" 
-        }
-    });
-});
-
-// C. REGISTRIERUNG (Mit Geocoding!)
-app.post('/api/auth/register', async (req, res) => {
-    const userData = req.body;
-    console.log("📝 Registrierung für:", userData.email);
-
-    // GPS Daten holen
-    let coordinates = { latitude: null, longitude: null };
-    if (userData.location) {
-        const coords = await getCoordinatesFromLocation(userData.location);
-        if (coords) coordinates = coords;
-    }
-
-    // Antwort senden
-    res.json({
-        success: true,
-        token: "neuer-user-token-456",
-        user: {
-            ...userData,
-            location_lat: coordinates.latitude,
-            location_lon: coordinates.longitude
-        }
-    });
-});
-
-// D. AUTH CHECK (Für automatischen Login beim App-Start)
-app.get('/api/auth/me', (req, res) => {
-    res.json({
-        user: { id: 1, name: "Test User", email: "test@test.com" }
-    });
-});
-
-// --- SERVER START ---
 app.listen(port, () => {
   console.log(`Server läuft auf Port ${port}`);
 });
-
-// Helper Funktion Wrapper (falls oben Tippfehler war)
-async function getCoordinatesFromLocation(loc) { return await functionHXGetCoordinatesFromLocation(loc); }
