@@ -19,20 +19,27 @@ const server = http.createServer(app);
 // Socket.io Setup
 const io = socketIO(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || '*', // Allow connection from anywhere for testing
+    origin: process.env.FRONTEND_URL || '*', 
     methods: ['GET', 'POST']
   }
 });
 
-// --- VONAGE SETUP (Nutzt Railway Variablen) ---
+// ==========================================
+//    VONAGE SETUP (WICHTIG: NEU)
+// ==========================================
+// Wir nutzen jetzt ALLE 4 Variablen aus Railway,
+// damit die sichere Verify V2 API funktioniert.
 const vonage = new Vonage({
   apiKey: process.env.VONAGE_API_KEY,
-  apiSecret: process.env.VONAGE_API_SECRET
+  apiSecret: process.env.VONAGE_API_SECRET,
+  applicationId: process.env.VONAGE_APPLICATION_ID,
+  privateKey: process.env.VONAGE_PRIVATE_KEY
 });
+// ==========================================
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*', // Flexibler für Mobile App
+  origin: process.env.FRONTEND_URL || '*',
   credentials: true
 }));
 app.use(express.json());
@@ -106,7 +113,7 @@ app.post('/api/send-code', async (req, res) => {
   console.log("📨 Versuche SMS zu senden an:", phoneNumber);
 
   try {
-    // WICHTIG: Nutzung der neuen V2 API
+    // Nutzung der neuen V2 API (benötigt App ID & Private Key)
     const result = await vonage.verify2.newRequest({
       brand: 'SunoMilo',
       workflow: [
@@ -115,12 +122,13 @@ app.post('/api/send-code', async (req, res) => {
     });
     
     console.log("✅ SMS beauftragt. ID:", result.requestId);
-    
-    // requestId an App zurücksenden
     res.json({ success: true, requestId: result.requestId });
 
   } catch (error) {
     console.error("❌ Fehler bei Vonage:", error);
+    // Fehlerdetails ausgeben falls vorhanden
+    if (error.response) console.error(error.response.data);
+    
     res.status(500).json({ success: false, message: 'SMS konnte nicht gesendet werden.' });
   }
 });
@@ -131,7 +139,7 @@ app.post('/api/verify-code', async (req, res) => {
   console.log(`🔍 Prüfe Code ${code} für ID ${requestId}`);
 
   try {
-    // WICHTIG: Nutzung der neuen V2 API
+    // Code prüfen
     await vonage.verify2.checkCode(requestId, code);
 
     console.log("✅ Code korrekt!");
@@ -182,10 +190,8 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// --- SERVER START (MIT STABILITÄTS-FIX) ---
+// --- SERVER START ---
 const PORT = process.env.PORT || 5000;
-
-// Hier ist Schritt 3: Wir binden explizit an '0.0.0.0'
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
