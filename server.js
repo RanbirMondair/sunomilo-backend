@@ -22,7 +22,7 @@ if (process.env.VONAGE_API_KEY && process.env.VONAGE_API_SECRET) {
 }
 
 // 2. Geocoding Helper (Deine Funktion)
-async functionHXGetCoordinatesFromLocation(location) {
+async function getCoordinatesFromLocation(location) {
   try {
     if (!location) return null;
     console.log(`🔍 Suche GPS für: ${location}`);
