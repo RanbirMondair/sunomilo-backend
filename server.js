@@ -4,7 +4,7 @@ const dotenv = require('dotenv');
 const http = require('http');
 const socketIO = require('socket.io');
 const { Pool } = require('pg');
-const { Vonage } = require('@vonage/server-sdk'); // Vonage Import
+const { Vonage } = require('@vonage/server-sdk'); // Import
 
 // Load environment variables
 dotenv.config();
@@ -15,14 +15,16 @@ const { initializeDatabase } = require('./db/init');
 // Initialize Express app
 const app = express();
 const server = http.createServer(app);
+
+// Socket.io Setup
 const io = socketIO(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: process.env.FRONTEND_URL || '*', // Allow connection from anywhere for testing
     methods: ['GET', 'POST']
   }
 });
 
-// --- VONAGE INITIALISIERUNG ---
+// --- VONAGE SETUP (Nutzt Railway Variablen) ---
 const vonage = new Vonage({
   apiKey: process.env.VONAGE_API_KEY,
   apiSecret: process.env.VONAGE_API_SECRET
@@ -30,7 +32,7 @@ const vonage = new Vonage({
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: process.env.FRONTEND_URL || '*', // Flexibler für Mobile App
   credentials: true
 }));
 app.use(express.json());
@@ -53,7 +55,6 @@ if (process.env.DATABASE_URL) {
       console.error('Database connection error:', err);
     } else {
       console.log('✅ Database connected');
-      // Initialize database tables
       try {
         await initializeDatabase();
       } catch (initError) {
@@ -69,14 +70,14 @@ if (process.env.DATABASE_URL) {
 app.locals.pool = pool;
 app.locals.io = io;
 
-// --- EXISTING ROUTES ---
+// --- BESTEHENDE ROUTEN ---
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/auth', require('./routes/refresh-token'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/profiles', require('./routes/profiles'));
 app.use('/api/photos', require('./routes/photo-upload'));
 app.use('/api/discovery', require('./routes/discovery'));
-app.use('/api', require('./routes/discovery')); // For /api/like endpoint
+app.use('/api', require('./routes/discovery'));
 app.use('/api/likes', require('./routes/likes'));
 app.use('/api/matches', require('./routes/matches'));
 app.use('/api/messages', require('./routes/messages'));
@@ -97,8 +98,7 @@ app.use('/api/profile-images', require('./routes/sync_profile_images'));
 app.post('/api/send-code', async (req, res) => {
   let { phoneNumber } = req.body;
   
-  // WICHTIG: Nummer muss mit '+' beginnen für die V2 API
-  // Wenn die App nur "4366..." schickt, machen wir "+4366..." daraus
+  // V2 API braucht zwingend ein "+"
   if (phoneNumber && !phoneNumber.toString().startsWith('+')) {
     phoneNumber = '+' + phoneNumber;
   }
@@ -106,7 +106,7 @@ app.post('/api/send-code', async (req, res) => {
   console.log("📨 Versuche SMS zu senden an:", phoneNumber);
 
   try {
-    // Neue V2 Methode: newRequest statt request
+    // WICHTIG: Nutzung der neuen V2 API
     const result = await vonage.verify2.newRequest({
       brand: 'SunoMilo',
       workflow: [
@@ -114,17 +114,14 @@ app.post('/api/send-code', async (req, res) => {
       ]
     });
     
-    console.log("✅ Vonage Result:", result);
+    console.log("✅ SMS beauftragt. ID:", result.requestId);
     
-    // requestId zurücksenden
+    // requestId an App zurücksenden
     res.json({ success: true, requestId: result.requestId });
 
   } catch (error) {
-    console.error("❌ Server Error bei SMS:", error);
-    if (error.response) {
-        console.error("Vonage Antwort:", error.response.data);
-    }
-    res.status(500).json({ success: false, message: 'Interner SMS Fehler' });
+    console.error("❌ Fehler bei Vonage:", error);
+    res.status(500).json({ success: false, message: 'SMS konnte nicht gesendet werden.' });
   }
 });
 
@@ -134,15 +131,15 @@ app.post('/api/verify-code', async (req, res) => {
   console.log(`🔍 Prüfe Code ${code} für ID ${requestId}`);
 
   try {
-    // V2 Methode: checkCode
-    const result = await vonage.verify2.checkCode(requestId, code);
+    // WICHTIG: Nutzung der neuen V2 API
+    await vonage.verify2.checkCode(requestId, code);
 
-    console.log("✅ Verifizierung erfolgreich!");
+    console.log("✅ Code korrekt!");
     res.json({ success: true });
 
   } catch (error) {
-    console.log("❌ Code ungültig oder Fehler:", error.message);
-    res.status(400).json({ success: false, message: 'Falscher Code' });
+    console.log("❌ Code falsch oder abgelaufen.");
+    res.status(400).json({ success: false, message: 'Code ungültig' });
   }
 });
 // ==========================================
@@ -156,10 +153,9 @@ app.get('/api/health', (req, res) => {
 // Socket.io events
 io.on('connection', (socket) => {
   console.log('🔗 User connected:', socket.id);
-
+  
   socket.on('join_match', (matchId) => {
     socket.join(`match_${matchId}`);
-    console.log(`User ${socket.id} joined match ${matchId}`);
   });
 
   socket.on('send_message', (data) => {
@@ -175,13 +171,10 @@ io.on('connection', (socket) => {
   });
 });
 
-// Error handling middleware
+// Error handling
 app.use((err, req, res, next) => {
   console.error('Error:', err);
-  res.status(500).json({
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
-  });
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // 404 handler
@@ -189,11 +182,12 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// Start server
+// --- SERVER START (MIT STABILITÄTS-FIX) ---
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
+
+// Hier ist Schritt 3: Wir binden explizit an '0.0.0.0'
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📱 Frontend URL: ${process.env.FRONTEND_URL}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
 });
 
@@ -202,7 +196,7 @@ process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
   server.close(() => {
     console.log('Server closed');
-    pool.end();
+    if (pool) pool.end();
     process.exit(0);
   });
 });
