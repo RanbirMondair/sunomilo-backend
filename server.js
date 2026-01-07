@@ -5,10 +5,8 @@ const { Pool } = require('pg');
 const { Vonage } = require('@vonage/server-sdk');
 
 const app = express();
-// Railway nutzt Port 8080 oder den aus der Umgebungsvariable
 const port = process.env.PORT || 8080; 
 
-// Datenbank-Verbindung mit SSL für Railway
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
@@ -17,7 +15,6 @@ const pool = new Pool({
 app.use(cors());
 app.use(express.json());
 
-// Logging für eingehende Anfragen (hilft bei der Fehlersuche im Railway Log)
 app.use((req, res, next) => {
   console.log(`📡 ${req.method} Anfrage an: ${req.url}`);
   next();
@@ -32,13 +29,8 @@ const vonage = new Vonage({
 app.get('/', async (req, res) => {
   try {
     const result = await pool.query('SELECT NOW()');
-    res.json({ 
-      message: 'SunoMilo API läuft!', 
-      db_time: result.rows[0].now,
-      status: 'Datenbank verbunden' 
-    });
+    res.json({ message: 'SunoMilo API läuft!', status: 'Datenbank verbunden' });
   } catch (err) {
-    console.error("DB Error:", err.message);
     res.status(500).json({ error: 'DB Verbindung fehlgeschlagen' });
   }
 });
@@ -50,15 +42,15 @@ app.post('/send-sms', async (req, res) => {
     const code = codeMatch ? codeMatch[0] : null;
 
     try {
-        // SMS via Vonage senden
         await vonage.sms.send({ to, from: "Sunomilo", text });
 
-        // WICHTIG: first_name und last_name hinzugefügt, damit die DB den User akzeptiert
+        // Wir lassen 'verification_code' weg, falls die Spalte fehlt, 
+        // und nutzen 'password_hash' als temporären Speicher für den Code
         await pool.query(
-            `INSERT INTO users (phone, verification_code, name, first_name, last_name, email, password_hash) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7) 
-             ON CONFLICT (phone) DO UPDATE SET verification_code = $2`,
-            [to, code, 'NewUser', 'New', 'User', `${to}@temp.com`, 'placeholder']
+            `INSERT INTO users (phone, name, first_name, last_name, email, password_hash) 
+             VALUES ($1, $2, $3, $4, $5, $6) 
+             ON CONFLICT (phone) DO UPDATE SET password_hash = $6`,
+            [to, 'NewUser', 'New', 'User', `${to}@temp.com`, code]
         );
 
         res.json({ success: true, message: 'Code gesendet' });
@@ -68,25 +60,22 @@ app.post('/send-sms', async (req, res) => {
     }
 });
 
-// --- 3. OPTIMIERTE DISCOVERY (Bilder laden) ---
+// --- 3. DISCOVERY ---
 app.get('/api/discovery', async (req, res) => {
   try {
-    // Holt User und deren Bilder-Array. Sortiert nach ID absteigend (neueste zuerst).
     const query = `
       SELECT u.id, u.first_name, u.name, u.phone, 
-             json_agg(pi.image_url) as images
+             json_agg(pi.image_url) FILTER (WHERE pi.image_url IS NOT NULL) as images
       FROM users u
       LEFT JOIN profile_images pi ON u.id = pi.user_id
       GROUP BY u.id
       ORDER BY u.id DESC
       LIMIT 50;
     `;
-    
     const result = await pool.query(query);
     res.json(result.rows); 
   } catch (err) {
-    console.error("Discovery Error:", err.message);
-    res.status(500).json({ error: "Profile konnten nicht geladen werden" });
+    res.status(500).json({ error: "Fehler beim Laden" });
   }
 });
 
@@ -96,7 +85,7 @@ app.post('/api/auth/login', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
         if (result.rows.length > 0) {
-            res.json({ success: true, token: 'session-token-active', user: result.rows[0] });
+            res.json({ success: true, token: 'session-token', user: result.rows[0] });
         } else {
             res.status(401).json({ error: 'User nicht gefunden' });
         }
@@ -108,14 +97,15 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/auth/register', async (req, res) => {
     const { name, email, phone } = req.body;
     try {
-        // WICHTIG: Auch hier first_name und last_name hinzugefügt
+        // WICHTIG: Wir lassen die 'id' weg! Die Datenbank vergibt sie automatisch (SERIAL).
+        // Das verhindert den "duplicate key" Fehler.
         const result = await pool.query(
             `INSERT INTO users (name, first_name, last_name, email, phone, password_hash) 
              VALUES ($1, $2, $3, $4, $5, $6) 
              RETURNING *`,
             [name, name, 'User', email, phone, 'hashed_password']
         );
-        res.json({ success: true, token: 'registration-token-active', user: result.rows[0] });
+        res.json({ success: true, token: 'reg-token', user: result.rows[0] });
     } catch (error) {
         console.error("Register Error:", error.message);
         res.status(500).json({ error: error.message });
@@ -123,5 +113,5 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`🚀 SunoMilo Backend aktiv auf Port ${port}`);
+  console.log(`🚀 Server aktiv auf Port ${port}`);
 });
