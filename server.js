@@ -53,12 +53,12 @@ app.post('/send-sms', async (req, res) => {
         // SMS via Vonage senden
         await vonage.sms.send({ to, from: "Sunomilo", text });
 
-        // User in DB anlegen oder Code aktualisieren
+        // WICHTIG: first_name und last_name hinzugefügt, damit die DB den User akzeptiert
         await pool.query(
-            `INSERT INTO users (phone, verification_code, name, email, password_hash) 
-             VALUES ($1, $2, $3, $4, $5) 
+            `INSERT INTO users (phone, verification_code, name, first_name, last_name, email, password_hash) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7) 
              ON CONFLICT (phone) DO UPDATE SET verification_code = $2`,
-            [to, code, 'NewUser', `${to}@temp.com`, 'placeholder']
+            [to, code, 'NewUser', 'New', 'User', `${to}@temp.com`, 'placeholder']
         );
 
         res.json({ success: true, message: 'Code gesendet' });
@@ -71,15 +71,15 @@ app.post('/send-sms', async (req, res) => {
 // --- 3. OPTIMIERTE DISCOVERY (Bilder laden) ---
 app.get('/api/discovery', async (req, res) => {
   try {
-    // Nutzt den neuen Index für maximale Geschwindigkeit
-    // json_agg bündelt alle Bild-URLs in ein einziges Feld pro User
+    // Holt User und deren Bilder-Array. Sortiert nach ID absteigend (neueste zuerst).
     const query = `
-      SELECT u.id, u.name, u.phone, 
+      SELECT u.id, u.first_name, u.name, u.phone, 
              json_agg(pi.image_url) as images
       FROM users u
       LEFT JOIN profile_images pi ON u.id = pi.user_id
       GROUP BY u.id
-      LIMIT 20;
+      ORDER BY u.id DESC
+      LIMIT 50;
     `;
     
     const result = await pool.query(query);
@@ -96,7 +96,6 @@ app.post('/api/auth/login', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
         if (result.rows.length > 0) {
-            // Token-Platzhalter für die App
             res.json({ success: true, token: 'session-token-active', user: result.rows[0] });
         } else {
             res.status(401).json({ error: 'User nicht gefunden' });
@@ -109,12 +108,16 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/auth/register', async (req, res) => {
     const { name, email, phone } = req.body;
     try {
+        // WICHTIG: Auch hier first_name und last_name hinzugefügt
         const result = await pool.query(
-            'INSERT INTO users (name, email, phone, password_hash) VALUES ($1, $2, $3, $4) RETURNING *',
-            [name, email, phone, 'hashed_password']
+            `INSERT INTO users (name, first_name, last_name, email, phone, password_hash) 
+             VALUES ($1, $2, $3, $4, $5, $6) 
+             RETURNING *`,
+            [name, name, 'User', email, phone, 'hashed_password']
         );
         res.json({ success: true, token: 'registration-token-active', user: result.rows[0] });
     } catch (error) {
+        console.error("Register Error:", error.message);
         res.status(500).json({ error: error.message });
     }
 });
